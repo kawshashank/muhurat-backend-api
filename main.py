@@ -10,7 +10,6 @@ import pytz
 # Initialize FastAPI App
 app = FastAPI(title="Muhurat API")
 
-# Allow your frontend to talk to this backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "*"], 
@@ -179,15 +178,50 @@ def calculate_muhurat(request: MuhuratRequest):
         rahu_s = pytz.utc.localize(rahu_start_utc).astimezone(local_tz)
         rahu_e = pytz.utc.localize(rahu_end_utc).astimezone(local_tz)
         
-        paksha = "Shukla (Zoon Pachh)" if astro["tithi_index"] <= 15 else "Krishna (Gatta Pachh)"
+        paksha = "Shukla" if astro["tithi_index"] <= 15 else "Krishna"
         
+        # --- NEW: RARE YOGA DETECTION ALGORITHM ---
+        weekday = sunrise_dt.weekday() # 0 = Mon, 6 = Sun
+        nak = astro["nakshatra_name"]
+        
+        is_highly = False
+        reason = ""
+        
+        # Checking Amrit Siddhi and Pushya Yogas
+        if weekday == 3 and nak == "Pushya":
+            is_highly = True
+            reason = "Guru Pushya Yoga: An exceptionally rare and powerful alignment. It multiplies success and is considered the absolute best day for wealth, property, and new beginnings."
+        elif weekday == 6 and nak == "Pushya":
+            is_highly = True
+            reason = "Ravi Pushya Yoga: A rare cosmic event. Highly celebrated as a 'golden window' for buying vehicles, jewelry, and making long-term investments."
+        elif weekday == 6 and nak == "Hasta":
+            is_highly = True
+            reason = "Amrit Siddhi Yoga: A rare alignment of Sunday and Hasta that guarantees success, completely nullifies negative influences, and brings long-term prosperity."
+        elif weekday == 0 and nak == "Mrigashirsha":
+            is_highly = True
+            reason = "Amrit Siddhi Yoga: Monday aligned with Mrigashirsha creates a highly potent window for long-lasting prosperity and joyful new beginnings."
+        elif weekday == 1 and nak == "Ashwini":
+            is_highly = True
+            reason = "Amrit Siddhi Yoga: Tuesday combined with Ashwini brings swift, unstoppable success and actively removes all obstacles from the task."
+        elif weekday == 2 and nak == "Anuradha":
+            is_highly = True
+            reason = "Amrit Siddhi Yoga: Wednesday and Anuradha create an unbreakable foundation. Perfect for signing papers, registering property, or launching businesses."
+        elif weekday == 4 and nak == "Revati":
+            is_highly = True
+            reason = "Amrit Siddhi Yoga: Friday and Revati yields immense wealth, harmony, and joy. A universally blessed day for major life events and purchases."
+        elif weekday == 5 and nak == "Rohini":
+            is_highly = True
+            reason = "Amrit Siddhi Yoga: Saturday aligned with Rohini ensures absolute stability and permanence. Highly sought after for Griha Pravesh and property matters."
+
         results.append({
             "date": sunrise_dt.strftime("%Y-%m-%d"),
             "start_time": sunrise_dt.strftime('%I:%M %p'),
             "end_time": sunset_dt.strftime('%I:%M %p'),
             "nakshatra": astro["nakshatra_name"],
             "tithi": f"{astro['tithi_name']} ({paksha})",
-            "notes": f"Rahu Kaal to avoid: {rahu_s.strftime('%I:%M %p')} to {rahu_e.strftime('%I:%M %p')}"
+            "notes": f"Rahu Kaal to avoid: {rahu_s.strftime('%I:%M %p')} to {rahu_e.strftime('%I:%M %p')}",
+            "is_highly_auspicious": is_highly,
+            "auspicious_reason": reason
         })
         
         current += timedelta(days=1)
