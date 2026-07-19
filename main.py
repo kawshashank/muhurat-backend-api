@@ -13,7 +13,7 @@ app = FastAPI(title="Vijayshwar Jantri - Muhurat API")
 # Allow your frontend to talk to this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "*"],
+    allow_origins=["http://localhost:3000", "*"], # Explicitly allow your local frontend
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -120,10 +120,14 @@ def calculate_rahu_kaal(sunrise_ephem, sunset_ephem, local_tz):
     rahu_start = sunrise_ephem + (segment_length * segment_index)
     rahu_end = rahu_start + segment_length
     
-    # THE FIX: Convert the float math back to an ephem.Date before calling datetime()
+    # Return as UTC naive datetimes (Fixing the float error)
     return ephem.Date(rahu_start).datetime(), ephem.Date(rahu_end).datetime()
 
-# --- MAIN API ENDPOINT ---
+# --- API ENDPOINTS ---
+
+@app.get("/")
+def read_root():
+    return {"status": "online", "message": "Muhurat API is awake and running!"}
 
 @app.post("/api/calculate-muhurat")
 def calculate_muhurat(request: MuhuratRequest):
@@ -133,15 +137,27 @@ def calculate_muhurat(request: MuhuratRequest):
     local_tz = pytz.timezone(tz_name)
     
     try:
+        today = datetime.utcnow()
+        absolute_max_date = today + timedelta(days=548)
+
         if request.start_date and request.end_date:
             start = datetime.strptime(request.start_date, "%Y-%m-%d")
             end = datetime.strptime(request.end_date, "%Y-%m-%d")
         else:
-            start = datetime.utcnow()
+            start = today
             end = start + timedelta(days=30)
             
+        # Guard 1: If they try to start searching >548 days in the future, stop them.
+        if start > absolute_max_date:
+            raise HTTPException(status_code=400, detail="Cannot search dates beyond 548 days from today.")
+            
+        # Guard 2: Window size safety net (max 90 days duration)
         if (end - start).days > 90:
             end = start + timedelta(days=90)
+            
+        # Guard 3: Absolute future wall (cap end date to 548 days from today)
+        if end > absolute_max_date:
+            end = absolute_max_date
             
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
