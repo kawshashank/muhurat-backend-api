@@ -120,8 +120,8 @@ def calculate_rahu_kaal(sunrise_ephem, sunset_ephem, local_tz):
     rahu_start = sunrise_ephem + (segment_length * segment_index)
     rahu_end = rahu_start + segment_length
     
-    # Return as UTC naive datetimes
-    return rahu_start.datetime(), rahu_end.datetime()
+    # THE FIX: Convert the float math back to an ephem.Date before calling datetime()
+    return ephem.Date(rahu_start).datetime(), ephem.Date(rahu_end).datetime()
 
 # --- MAIN API ENDPOINT ---
 
