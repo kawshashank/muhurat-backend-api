@@ -8,12 +8,12 @@ from datetime import datetime, timedelta
 import pytz
 
 # Initialize FastAPI App
-app = FastAPI(title="Vijayshwar Jantri - Muhurat API")
+app = FastAPI(title="Muhurat API")
 
 # Allow your frontend to talk to this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "*"], # Explicitly allow your local frontend
+    allow_origins=["http://localhost:3000", "*"], 
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,8 +28,6 @@ class MuhuratRequest(BaseModel):
     end_date: Optional[str] = None
 
 # --- ASTRONOMICAL CONSTANTS & RULES ---
-
-# Map frontend dropdown strings to Latitude, Longitude, and Timezone
 ZONE_MAPPING = {
     "Delhi, India (IST)": (28.6139, 77.2090, "Asia/Kolkata"),
     "New York, USA (EST)": (40.7128, -74.0060, "America/New_York"),
@@ -61,13 +59,16 @@ ACTIVITY_RULES = {
     "VEHICLE_PURCHASE": ["Pushya", "Punarvasu", "Shravana", "Dhanishta", "Shatabhisha", "Swati"],
     "PROPERTY_SIGNING": ["Rohini", "Mrigashirsha", "Pushya", "Purva Phalguni", "Hasta", "Anuradha"],
     "GRIHA_PRAVESH": ["Rohini", "Mrigashirsha", "Pushya", "Chitra", "Anuradha", "Revati"],
-    "GENERAL_AUSPICIOUS": ["Pushya", "Rohini", "Mrigashirsha", "Hasta", "Anuradha", "Revati"]
+    "GENERAL_AUSPICIOUS": ["Pushya", "Rohini", "Mrigashirsha", "Hasta", "Anuradha", "Revati"],
+    "STARTING_BUSINESS": ["Pushya", "Chitra", "Anuradha", "Revati", "Ashwini", "Mrigashirsha"],
+    "BUYING_JEWELRY": ["Pushya", "Dhanishta", "Shatabhisha", "Rohini", "Swati", "Punarvasu"],
+    "STARTING_EDUCATION": ["Ashwini", "Mrigashirsha", "Punarvasu", "Pushya", "Hasta", "Chitra", "Revati"],
+    "LONG_JOURNEY": ["Ashwini", "Punarvasu", "Pushya", "Anuradha", "Mrigashirsha", "Revati", "Hasta"]
 }
 
 RAHU_KAAL_SEGMENTS = {0: 1, 1: 6, 2: 4, 3: 5, 4: 3, 5: 2, 6: 7}
 
 # --- HELPER FUNCTIONS ---
-
 def get_moon_and_sun_longitude(obs: ephem.Observer):
     sun = ephem.Sun(obs)
     moon = ephem.Moon(obs)
@@ -76,7 +77,6 @@ def get_moon_and_sun_longitude(obs: ephem.Observer):
     return sun_lon, moon_lon
 
 def get_astrology_for_day(current_date, lat, lon, local_tz):
-    # Lock the start time to exactly 00:00:00 of the target timezone's calendar day
     local_midnight = local_tz.localize(datetime(current_date.year, current_date.month, current_date.day, 0, 0, 0))
     utc_midnight = local_midnight.astimezone(pytz.utc)
 
@@ -85,11 +85,9 @@ def get_astrology_for_day(current_date, lat, lon, local_tz):
     obs.date = utc_midnight
     
     try:
-        # Get the next mathematical sunrise and sunset for this specific location
         sunrise = obs.next_rising(ephem.Sun())
         sunset = obs.next_setting(ephem.Sun())
         
-        # Advance observer exactly to sunrise to check the Udaya Tithi
         obs.date = sunrise
         sun_lon, moon_lon = get_moon_and_sun_longitude(obs)
         
@@ -108,7 +106,6 @@ def get_astrology_for_day(current_date, lat, lon, local_tz):
         return None
 
 def calculate_rahu_kaal(sunrise_ephem, sunset_ephem, local_tz):
-    # Find the local weekday of the sunrise to apply the correct Rahu Kaal formula
     sunrise_utc = pytz.utc.localize(sunrise_ephem.datetime())
     sunrise_local = sunrise_utc.astimezone(local_tz)
     weekday = sunrise_local.weekday()
@@ -120,18 +117,15 @@ def calculate_rahu_kaal(sunrise_ephem, sunset_ephem, local_tz):
     rahu_start = sunrise_ephem + (segment_length * segment_index)
     rahu_end = rahu_start + segment_length
     
-    # Return as UTC naive datetimes (Fixing the float error)
     return ephem.Date(rahu_start).datetime(), ephem.Date(rahu_end).datetime()
 
 # --- API ENDPOINTS ---
-
 @app.get("/")
 def read_root():
     return {"status": "online", "message": "Muhurat API is awake and running!"}
 
 @app.post("/api/calculate-muhurat")
 def calculate_muhurat(request: MuhuratRequest):
-    # 1. Geographic & Timezone Grounding
     zone_info = ZONE_MAPPING.get(request.selected_zone_name, ZONE_MAPPING["Delhi, India (IST)"])
     lat, lon, tz_name = zone_info[0], zone_info[1], zone_info[2]
     local_tz = pytz.timezone(tz_name)
@@ -147,15 +141,12 @@ def calculate_muhurat(request: MuhuratRequest):
             start = today
             end = start + timedelta(days=30)
             
-        # Guard 1: If they try to start searching >548 days in the future, stop them.
         if start > absolute_max_date:
             raise HTTPException(status_code=400, detail="Cannot search dates beyond 548 days from today.")
             
-        # Guard 2: Window size safety net (max 90 days duration)
         if (end - start).days > 90:
             end = start + timedelta(days=90)
             
-        # Guard 3: Absolute future wall (cap end date to 548 days from today)
         if end > absolute_max_date:
             end = absolute_max_date
             
@@ -167,7 +158,6 @@ def calculate_muhurat(request: MuhuratRequest):
     results = []
     current = start
     
-    # 2. Calculation Loop
     while current <= end:
         astro = get_astrology_for_day(current, lat, lon, local_tz)
         if not astro:
@@ -184,7 +174,6 @@ def calculate_muhurat(request: MuhuratRequest):
             
         rahu_start_utc, rahu_end_utc = calculate_rahu_kaal(astro["sunrise"], astro["sunset"], local_tz)
         
-        # 3. Final Timezone Conversions for the UI
         sunrise_dt = pytz.utc.localize(astro["sunrise"].datetime()).astimezone(local_tz)
         sunset_dt = pytz.utc.localize(astro["sunset"].datetime()).astimezone(local_tz)
         rahu_s = pytz.utc.localize(rahu_start_utc).astimezone(local_tz)
